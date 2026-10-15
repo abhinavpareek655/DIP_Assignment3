@@ -1,11 +1,12 @@
 import sys
-
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
 def load_image(image_path):
     image = Image.open(image_path).convert('RGB')
+    # image = image.resize((32,32))
     return np.asarray(image, dtype=np.float64)
 
 def feature_representation(image):
@@ -62,21 +63,28 @@ def create_segmentation(shifted_features, image_shape, spatial_threshold=10, col
                 labels[i] = label
                 assigned = True
                 break
-
         if not assigned:
             labels[i] = len(modes)
             modes.append(point.copy())
-
     label_map = labels.reshape(h, w)
-
     rng = np.random.default_rng(42)
     num_segments = len(modes)
     colors = rng.integers(
         0, 256, size=(num_segments, 3), dtype=np.uint8
     )
     segmented_image = colors[label_map]
-
     return label_map, segmented_image
+
+def save_outputs(image, segmented_image, labels, image_path, out_dir, alpha=0.3):
+    os.makedirs(out_dir, exist_ok=True)
+    original_u8 = image.astype(np.uint8)
+    Image.fromarray(segmented_image).save(os.path.join(out_dir, "segmented.png"))
+    Image.fromarray(original_u8).save(os.path.join(out_dir, "original.png"))
+    np.save(os.path.join(out_dir, "labels.npy"), labels)
+    overlay = (alpha * segmented_image + (1 - alpha) * original_u8).astype(np.uint8)
+    Image.fromarray(overlay).save(os.path.join(out_dir, "overlay.png"))
+    print(f"Saved outputs to '{out_dir}/'")
+    return overlay
 
 def main(image_path):
     image = load_image(image_path)
@@ -90,21 +98,29 @@ def main(image_path):
         spatial_threshold=10,
         color_threshold=15
     )
-
+    output_dir = "outputs/part1/" + image_path.split('/')[-1].split('.')[0]
+    save_outputs(image, segmented_image, labels, image_path, output_dir)
+    overlay = save_outputs(image, segmented_image, labels, image_path, output_dir)
     print("Number of segments:", len(np.unique(labels)))
 
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(15, 5))
 
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, 3, 1)
     plt.imshow(image.astype(np.uint8))
     plt.title("Original Image")
     plt.axis("off")
 
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, 3, 2)
     plt.imshow(segmented_image)
     plt.title("Mean-Shift Segmentation")
     plt.axis("off")
 
+    plt.subplot(1, 3, 3)
+    plt.imshow(overlay)
+    plt.title("Overlay")
+    plt.axis("off")
+
+    plt.savefig(os.path.join(output_dir, "comparison.png"), bbox_inches="tight", dpi=150)
     plt.show()
 
 if __name__ == "__main__":
