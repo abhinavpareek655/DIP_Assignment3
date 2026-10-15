@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -76,8 +78,7 @@ def create_segmentation(shifted_features, image_shape, spatial_threshold=10, col
 
     return label_map, segmented_image
 
-def main():
-    image_path = "../data/segment/ghats.png"
+def main(image_path):
     image = load_image(image_path)
     hs = 10
     hr = 15
@@ -107,4 +108,7 @@ def main():
     plt.show()
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2:
+        print("Usage: python a.py <image_path>")
+        sys.exit(1)
+    main(sys.argv[1])
