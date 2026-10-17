@@ -89,21 +89,22 @@ def save_outputs(image, segmented_image, labels, image_path, out_dir, alpha=0.3)
     print(f"Saved outputs to '{out_dir}/'")
     return overlay
 
-def main(image_path):
+def main(image_path, hs, hr):
     image = load_image(image_path)
-    hs = 600
-    hr = 14
+    # hs = 600
+    # hr = 14
 
     labels, segmented_image = mean_shift(image, hs, hr)
     boundaries = create_segment_boundaries(image, labels)
     output_dir = "outputs/part1/" + image_path.split('/')[-1].split('.')[0]
     save_outputs(image, segmented_image, labels, image_path, output_dir)
     binary_segmentation = binary_from_labels(labels)
+    num_segments = len(np.unique(labels))
     Image.fromarray(binary_segmentation).save(
         os.path.join(output_dir, "binary_segmentation.png")
     )
     Image.fromarray(boundaries).save(os.path.join(output_dir, "boundaries.png"))
-    print("Number of segments:", len(np.unique(labels)))
+    print("Number of segments:", num_segments)
 
     plt.figure(figsize=(15, 5))
 
@@ -122,7 +123,10 @@ def main(image_path):
     plt.title("Binary Segmentation")
     plt.axis("off")
 
-    plt.tight_layout()
+    plt.suptitle(
+        f"Mean Shift Comparison (hs={hs}, hr={hr}, segments={num_segments})"
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
     plt.savefig(os.path.join(output_dir, "input_and_segmentation.png"),
                 bbox_inches="tight", dpi=150)
     plt.show()
@@ -137,7 +141,7 @@ def main(image_path):
     plt.show()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python a.py <image_path>")
+    if len(sys.argv) != 4:
+        print("Usage: python a.py <image_path> hs hr")
         sys.exit(1)
-    main(sys.argv[1])
+    main(sys.argv[1], hs=int(sys.argv[2]), hr=int(sys.argv[3]))
