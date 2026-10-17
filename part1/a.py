@@ -91,8 +91,8 @@ def save_outputs(image, segmented_image, labels, image_path, out_dir, alpha=0.3)
 
 def main(image_path):
     image = load_image(image_path)
-    hs = 230
-    hr = 50
+    hs = 600
+    hr = 14
 
     labels, segmented_image = mean_shift(image, hs, hr)
     boundaries = create_segment_boundaries(image, labels)
