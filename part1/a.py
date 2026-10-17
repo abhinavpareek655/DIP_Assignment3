@@ -6,7 +6,7 @@ from PIL import Image
 
 def load_image(image_path):
     image = Image.open(image_path).convert('RGB')
-    # image = image.resize((32,32))
+    image = image.resize((128,128))
     return np.asarray(image, dtype=np.float64)
 
 def feature_representation(image):
@@ -46,34 +46,53 @@ def mean_shift(image, hs, hr, min_shift=1e-3, max_iter=100):
     return new_features
 
 def create_segmentation(shifted_features, image_shape, spatial_threshold=10, color_threshold=15):
-    h, w, c = image_shape
-    n = len(shifted_features)
-    labels = np.full(n, -1, dtype=int)
+    """Cluster converged mean-shift features and return labels and segment colors."""
+    n = shifted_features.shape[0]
+    labels = np.zeros(n, dtype=np.int32)
     modes = []
-    for i in range(n):
-        point = shifted_features[i].astype(float)
-        assigned = False
+    bins = {}
+    spatial_threshold = float(spatial_threshold)
+    color_threshold = float(color_threshold)
 
-        for label, mode in enumerate(modes):
-            spatial_distance = np.linalg.norm(point[:2] - mode[:2])
-            color_distance = np.linalg.norm(point[2:] - mode[2:])
-
-            if (spatial_distance <= spatial_threshold and
-                    color_distance <= color_threshold):
-                labels[i] = label
-                assigned = True
+    for index, feature in enumerate(shifted_features):
+        key = tuple(np.floor(feature[:2] / spatial_threshold).astype(int))  
+        label = None
+        for bx in range(key[0] - 1, key[0] + 2):
+            for by in range(key[1] - 1, key[1] + 2):
+                for candidate in bins.get((bx, by), []):
+                    mode = modes[candidate]
+                    if (np.linalg.norm(feature[:2] - mode[:2]) <= spatial_threshold
+                            and np.linalg.norm(feature[2:] - mode[2:]) <= color_threshold):
+                        label = candidate
+                        break
+                if label is not None:
+                    break
+            if label is not None:
                 break
-        if not assigned:
-            labels[i] = len(modes)
-            modes.append(point.copy())
-    label_map = labels.reshape(h, w)
-    rng = np.random.default_rng(42)
-    num_segments = len(modes)
-    colors = rng.integers(
-        0, 256, size=(num_segments, 3), dtype=np.uint8
-    )
-    segmented_image = colors[label_map]
-    return label_map, segmented_image
+        if label is None:
+            label = len(modes)
+            modes.append(feature.copy())
+            bins.setdefault(key, []).append(label)
+        labels[index] = label + 1
+
+    labels = labels.reshape(image_shape[:2])
+    modes = np.asarray(modes)
+    segmented_image = np.clip(
+        modes[labels.ravel() - 1, 2:].reshape(image_shape[:2] + (3,)), 0, 255
+    ).astype(np.uint8)
+    return labels, segmented_image
+
+def create_segment_boundaries(image, labels):
+    """Return the RGB image with two-pixel-thick black segment boundaries."""
+    result = np.asarray(image, dtype=np.uint8).copy()
+    boundaries = np.zeros(labels.shape, dtype=bool)
+    boundaries[:, 1:] |= labels[:, 1:] != labels[:, :-1]
+    boundaries[1:, :] |= labels[1:, :] != labels[:-1, :]
+    thick = boundaries.copy()
+    thick[1:, :] |= boundaries[:-1, :]
+    thick[:, 1:] |= boundaries[:, :-1]
+    result[thick] = 0
+    return result
 
 def save_outputs(image, segmented_image, labels, image_path, out_dir, alpha=0.3):
     os.makedirs(out_dir, exist_ok=True)
@@ -88,8 +107,8 @@ def save_outputs(image, segmented_image, labels, image_path, out_dir, alpha=0.3)
 
 def main(image_path):
     image = load_image(image_path)
-    hs = 10
-    hr = 15
+    hs = 0.2*min(image.shape[:2])
+    hr = 40
     shifted_features = mean_shift(image, hs, hr)
 
     labels, segmented_image = create_segmentation(
@@ -98,29 +117,41 @@ def main(image_path):
         spatial_threshold=10,
         color_threshold=15
     )
+    boundaries = create_segment_boundaries(image, labels)
     output_dir = "outputs/part1/" + image_path.split('/')[-1].split('.')[0]
     save_outputs(image, segmented_image, labels, image_path, output_dir)
-    overlay = save_outputs(image, segmented_image, labels, image_path, output_dir)
+    segmented_gray = np.mean(segmented_image, axis=2)
+    binary_segmentation = ((segmented_gray > segmented_gray.mean()) * 255).astype(np.uint8)
+    Image.fromarray(binary_segmentation).save(
+        os.path.join(output_dir, "binary_segmentation.png")
+    )
+    Image.fromarray(boundaries).save(os.path.join(output_dir, "boundaries.png"))
     print("Number of segments:", len(np.unique(labels)))
 
-    plt.figure(figsize=(15, 5))
+    plt.figure(figsize=(10, 5))
 
-    plt.subplot(1, 3, 1)
+    plt.subplot(1, 2, 1)
     plt.imshow(image.astype(np.uint8))
     plt.title("Original Image")
     plt.axis("off")
 
-    plt.subplot(1, 3, 2)
-    plt.imshow(segmented_image)
-    plt.title("Mean-Shift Segmentation")
+    plt.subplot(1, 2, 2)
+    plt.imshow(binary_segmentation, cmap="gray", vmin=0, vmax=255)
+    plt.title("Binary Segmentation")
     plt.axis("off")
 
-    plt.subplot(1, 3, 3)
-    plt.imshow(overlay)
-    plt.title("Overlay")
-    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "input_and_segmentation.png"),
+                bbox_inches="tight", dpi=150)
+    plt.show()
 
-    plt.savefig(os.path.join(output_dir, "comparison.png"), bbox_inches="tight", dpi=150)
+    plt.figure(figsize=(5, 5))
+    plt.imshow(boundaries)
+    plt.title("Segment Boundaries on Input")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "boundaries_display.png"),
+                bbox_inches="tight", dpi=150)
     plt.show()
 
 if __name__ == "__main__":
